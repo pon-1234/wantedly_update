@@ -1,0 +1,7 @@
+selenium==4.15.2
+pytest==8.3.4
+google-cloud-secret-manager==2.16.4
+chromedriver-autoinstaller==0.6.3
+functions-framework==3.5.0
+flask==3.0.0
+webdriver-manager==4.0.1
