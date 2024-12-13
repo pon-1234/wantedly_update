@@ -61,15 +61,53 @@ def log_page_state(driver, step_name):
     """現在のページの状態をログに記録"""
     logger.info(f"=== {step_name} ===")
     logger.info(f"現在のURL: {driver.current_url}")
-    logger.info("ページソース:")
-    logger.info(driver.page_source[:1000])  # より多くのページソースを表示
+    
+    # iframeの確認
+    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+    logger.info(f"iframeの数: {len(iframes)}")
+    for idx, iframe in enumerate(iframes):
+        logger.info(f"iframe {idx}: id={iframe.get_attribute('id')}, name={iframe.get_attribute('name')}")
+    
+    # Shadow DOMの確認
+    shadow_roots = driver.execute_script("""
+        return Array.from(document.querySelectorAll('*')).filter(el => el.shadowRoot).map(el => ({
+            tag: el.tagName,
+            id: el.id,
+            class: el.className
+        }));
+    """)
+    if shadow_roots:
+        logger.info("Shadow DOM要素:")
+        for root in shadow_roots:
+            logger.info(f"Shadow host: tag={root['tag']}, id={root['id']}, class={root['class']}")
+    
     logger.info("利用可能なボタン:")
     buttons = driver.find_elements(By.TAG_NAME, "button")
     for button in buttons:
         try:
-            logger.info(f"ボタンテキスト: {button.text}, type: {button.get_attribute('type')}")
+            logger.info(f"ボタン情報: text='{button.text}', id='{button.get_attribute('id')}', "
+                       f"class='{button.get_attribute('class')}', type='{button.get_attribute('type')}', "
+                       f"aria-label='{button.get_attribute('aria-label')}', "
+                       f"disabled='{button.get_attribute('disabled')}', "
+                       f"display='{button.value_of_css_property('display')}', "
+                       f"visibility='{button.value_of_css_property('visibility')}'")
         except:
             pass
+    
+    logger.info("利用可能な入力フィールド:")
+    inputs = driver.find_elements(By.TAG_NAME, "input")
+    for input_field in inputs:
+        try:
+            logger.info(f"入力フィールド情報: type='{input_field.get_attribute('type')}', "
+                       f"id='{input_field.get_attribute('id')}', "
+                       f"class='{input_field.get_attribute('class')}', "
+                       f"name='{input_field.get_attribute('name')}', "
+                       f"placeholder='{input_field.get_attribute('placeholder')}'")
+        except:
+            pass
+    
+    logger.info("ページソース:")
+    logger.info(driver.page_source[:2000])  # より多くのページソースを表示
     logger.info("=== 状態確認終了 ===")
 
 def update_titles():
@@ -79,6 +117,18 @@ def update_titles():
         logger.info("=== 処理開始 ===")
         logger.info(f"設定されているプロジェクトID: {PROJECT_IDS}")
         logger.info(f"BASE_URL: {BASE_URL}")
+        
+        # 環境変数のチェック
+        email = os.environ.get('WANTEDLY_EMAIL')
+        password = os.environ.get('WANTEDLY_PASSWORD')
+        
+        if not email or not password:
+            logger.error("必要な環境変数が設定されていません")
+            logger.error(f"WANTEDLY_EMAIL: {'設定済み' if email else '未設定'}")
+            logger.error(f"WANTEDLY_PASSWORD: {'設定済み' if password else '未設定'}")
+            raise ValueError("必要な環境変数が設定されていません")
+            
+        logger.info(f"メールアドレス: {email[:3]}...{email[-10:]}")  # セキュリティのため一部のみ表示
         
         logger.info("Wantedly更新処理を開始します")
         driver = setup_chrome_driver()
@@ -103,157 +153,78 @@ def update_titles():
 
         # ページ読み込みとJS実行完了を待機
         wait_for_js_load(driver)
-        time.sleep(3)  # 追加の待機時間でDOMが安定するのを待つ
+        time.sleep(10)  # 待機時間を10秒に延長
 
-        # ログインページ初期状態をログ
-        log_page_state(driver, "ログインページ初期状態")
-
-        # メールアドレス入力フィールドを待機
+        # メールアドレス入力フィールドを待機して入力
         logger.info("メールアドレス入力フィールドを待機中...")
-        try:
-            # メール/パスワードログインへの切り替えリンクを探す（複数の可能性を試す）
-            selectors = [
-                "//a[contains(text(), 'メールアドレス')]",
-                "//button[contains(text(), 'メールアドレス')]",
-                "//div[contains(text(), 'メールアドレス')]",
-                "//span[contains(text(), 'メールアドレス')]"
-            ]
-            for selector in selectors:
-                try:
-                    email_login_link = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
-                    logger.info(f"メール/パスワードログインリンクを見つけました: {selector}")
-                    email_login_link.click()
-                    time.sleep(3)
-                    break
-                except:
-                    continue
-
-            # ページの状態を確認
-            log_page_state(driver, "メールログイン切り替え後")
-        except:
-            logger.info("すでにメール/パスワードログインフォームが表示されています")
-
-        # メールアドレス入力フィールドを探す（複数の可能性を試す）
-        field_selectors = [
-            "input[type='email']", 
-            "input[name='email']",
-            "input[placeholder*='メール']",
-            "input[placeholder*='mail']",
-            "input#email"
-        ]
+        email_field = wait.until(EC.presence_of_element_located((By.ID, "email")))
         
-        email_field = None
-        for selector in field_selectors:
-            try:
-                email_field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
-                logger.info(f"メールアドレス入力フィールドを見つけました: {selector}")
-                break
-            except:
-                continue
-
-        if not email_field:
-            raise Exception("メールアドレス入力フィールドが見つかりませんでした")
-
-        email_field.send_keys(email)
-        logger.info("メールアドレスを入力しました")
-
-        # 次へボタンを探す（複数の可能性を試す）
-        button_selectors = [
-            "//button[contains(text(), '次へ')]",
-            "//button[@type='submit']", 
-            "//input[@type='submit']",
-            "//button[contains(@class, 'primary')]",
-            "//button[@id='next-step-button']"
-        ]
-
-        next_button = None
-        for selector in button_selectors:
-            try:
-                next_button = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
-                logger.info(f"次へボタンを見つけました: {selector}")
-                break
-            except:
-                continue
-
-        if not next_button:
-            raise Exception("次へボタンが見つかりませんでした")
-
-        driver.execute_script("arguments[0].click();", next_button)
-        logger.info("次へボタンをクリックしました")
-
-        # 送信ボタンクリック後の状態確認
-        log_page_state(driver, "送信ボタンクリック後")
-
-        # ���スワード入力フィールドの待機処理を改善
-        wait_for_js_load(driver)
-        time.sleep(3)
-
+        # JavaScriptを使用して値をセットし、イベントを発火
+        driver.execute_script("""
+            arguments[0].value = arguments[1];
+            arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+            arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+        """, email_field, email)
+        logger.info("JavaScriptでメールアドレスをセットし、イベントを発火させました")
+        
+        time.sleep(2)  # イベント処理待機
+        
+        # メールアドレス入力後の状態を確認
+        log_page_state(driver, "メールアドレス入力後")
+        
         try:
-            # パスワード入力フィールドのセレクターを追加
-            password_selectors = [
-                "input[type='password']",
-                "input#password",
-                "input[name='password']",
-                "input.SigninAndSignupForm__TextField-sc-aqv94n-2"  # クラス名を追加
-            ]
+            # 次へボタンが有効になるまで待機
+            next_button = wait.until(
+                EC.element_to_be_clickable((By.ID, "next-step-button"))
+            )
+            logger.info("次へボタンが有効になりました")
             
-            password_field = None
-            for selector in password_selectors:
-                try:
-                    password_field = wait.until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    logger.info(f"パスワード入力フィールドを見つけました: {selector}")
-                    break
-                except:
-                    continue
-
-            if not password_field:
-                raise Exception("パスワード入力フィールドが見つかりませんでした")
-
-            password_field.send_keys(password)
-            logger.info("パスワードを入力しました")
-
+            # JavaScriptでクリックイベントを発火
+            driver.execute_script("arguments[0].click();", next_button)
+            logger.info("次へボタンをクリックしました")
         except Exception as e:
-            logger.error(f"パスワード入力フィールドの取得に失敗しました: {str(e)}")
+            logger.error(f"次へボタンの処理中にエラーが発生: {str(e)}")
+            log_page_state(driver, "次へボタン処理エラー")
             raise
-
-        # パスワード入力後の状態確認
-        log_page_state(driver, "パスワード入力後")
-
-        # ログインボタンの処理を改善
-        logger.info("ログインボタンを待機中...")
-        wait_for_js_load(driver)
-        time.sleep(3)
-
+        
+        time.sleep(5)  # 画面遷移待機
+        
         try:
-            login_button_selectors = [
-                "button#next-step-button",
-                "button[type='submit']",
-                "button.SigninAndSignupForm__NextStepButton-sc-aqv94n-9"  # クラス名を追加
-            ]
+            # パスワード入力フィールドの表示を待機
+            wait_long = WebDriverWait(driver, 30)
+            password_field = wait_long.until(
+                EC.presence_of_element_located((By.ID, "password"))
+            )
             
-            login_button = None
-            for selector in login_button_selectors:
-                try:
-                    login_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
-                    logger.info(f"ログインボタンを見つけました: {selector}")
-                    break
-                except:
-                    continue
-
-            if not login_button:
-                raise Exception("ログインボタンが見つかりませんでした")
-
+            # JavaScriptを使用してパスワードをセットし、イベントを発火
+            driver.execute_script("""
+                arguments[0].value = arguments[1];
+                arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+                arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+            """, password_field, password)
+            logger.info("JavaScriptでパスワードをセットし、イベントを発火させました")
+            
+            time.sleep(2)  # イベント処理待機
+            
+            # パスワード入力後の状態を確認
+            log_page_state(driver, "パスワード入力後")
+            
+            # ログインボタンが有効になるまで待機
+            login_button = wait_long.until(
+                EC.element_to_be_clickable((By.ID, "next-step-button"))
+            )
+            logger.info("ログインボタンが有効になりました")
+            
+            # JavaScriptでクリックイベントを発火
             driver.execute_script("arguments[0].click();", login_button)
             logger.info("ログインボタンをクリックしました")
-
         except Exception as e:
-            logger.error(f"ログインボタンの操作に失敗しました: {str(e)}")
+            logger.error(f"パスワードフォームの処理中にエラーが発生: {str(e)}")
+            log_page_state(driver, "パスワードフォーム処理エラー")
             raise
 
-        time.sleep(LOGIN_WAIT_TIME)
-        logger.info("ログインプロセスが完了しました")
+        # ログイン処理の完了を待機
+        time.sleep(10)
 
         # ログイン完了後の状態確認
         log_page_state(driver, "ログイン完了後")

@@ -1,74 +1,56 @@
-# Wantedly Title Update Automation
+# Wantedly Update Automation
 
-このプロジェクトは、Wantedlyの求人情報を自動的に更新するためのCloud Run上で動作する自動化システムです。
-
-## 機能
-
-- Wantedly管理画面への自動ログイン
-- 指定された求人情報の自動更新
-- Cloud Schedulerによる定期実行
-- Secret Managerを使用した認証情報の安全な管理
-
-## 技術スタック
-
-- Python 3.10
-- Selenium
-- Google Cloud Platform
-  - Cloud Run
-  - Cloud Scheduler
-  - Secret Manager
-- Docker
+Wantedlyの求人情報を自動的に更新するCloud Runアプリケーション。
 
 ## セットアップ
 
-1. 必要な環境変数の設定
-```bash
-export WANTEDLY_EMAIL="your-email@example.com"
-export WANTEDLY_PASSWORD="your-password"
-export PROJECT_IDS="id1,id2,id3"  # カンマ区切りで複数指定可能
-```
+1. 環境変数の設定
+   - `.env.example`を`.env`にコピーし、必要な情報を入力
+   ```bash
+   cp .env.example .env
+   ```
 
-2. 依存パッケージのインストール
-```bash
-pip install -r requirements.txt
-```
-
-3. ローカルでの実行
-```bash
-python main.py
-```
-
-## GCPへのデプロイ
-
-1. GCPプロジェクトの設定
-```bash
-gcloud config set project your-project-id
-```
-
-2. Secret Managerでの認証情報の設定
-```bash
-gcloud secrets create wantedly-credentials --data-file=credentials.json
-```
+2. 仮想環境の作成とパッケージのインストール
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
 3. Cloud Runへのデプロイ
+   ```bash
+   gcloud run deploy wantedly-update \
+     --source . \
+     --region asia-northeast1 \
+     --platform managed \
+     --allow-unauthenticated \
+     --set-env-vars WANTEDLY_EMAIL=your-email,WANTEDLY_PASSWORD=your-password,WANTEDLY_COMPANY_ID=your-company-id,GCP_PROJECT=your-project-id
+   ```
+
+## 使用方法
+
+### 手動実行
 ```bash
-gcloud builds submit
+curl -X POST https://[YOUR-SERVICE-URL]/update-wantedly
 ```
 
-4. Cloud Schedulerの設定
+### ログの確認
 ```bash
-gcloud scheduler jobs create http wantedly-title-update \
-  --schedule="0 */6 * * *" \
-  --uri="your-cloud-run-url" \
-  --http-method=POST \
-  --location=asia-northeast1
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=wantedly-update" --limit 20
 ```
+
+## 環境変数
+
+- `WANTEDLY_EMAIL`: Wantedlyログイン用メールアドレス
+- `WANTEDLY_PASSWORD`: Wantedlyログイン用パスワード
+- `WANTEDLY_COMPANY_ID`: 更新対象の企業ID
+- `GCP_PROJECT`: GCPプロジェクトID
 
 ## 注意事項
 
-- 実行前に必ずWantedlyの利用規約を確認してください
-- 認証情報は適切に管理してください
-- 更新頻度は適切な間隔を設定してください
+- 環境変数は必ず設定してください
+- デプロイ前にテストを実行することを推奨します
+- エラーが発生した場合は、Cloud Runのログを確認してください
 
 ## ライセンス
 
